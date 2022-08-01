@@ -1,0 +1,38 @@
+name: Deploy
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  Deploy:
+    environment: production
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
+      - run: echo "🐧 This job is now running on a ${{ runner.os }} server."
+      - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
+      - name: Check out repository code
+        uses: actions/checkout@v3
+      - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
+      - name: List files in the repository
+        run: |
+          ls ${{ github.workspace }}
+      - name: Deploy
+        run: |
+          set -x
+          mkdir -p ~/.ssh
+          ssh-keyscan ${{ secrets.DOKKU_HOST }}>> ~/.ssh/known_hosts
+          eval `ssh-agent -s`
+          ssh-add - <<< "${{ secrets.DOKKU_SSH_PRIVATE_KEY}}"
+          ssh dokku@${{ secrets.DOKKU_HOST }} -C dokku apps:create container-5ijymqk || true
+          ssh dokku@${{ secrets.DOKKU_HOST }} -C dokku builder:set container-5ijymqk build-dir src
+          ssh dokku@${{ secrets.DOKKU_HOST }} -C "dokku builder-dockerfile:set container-5ijymqk dockerfile-path Dockerfile"
+          ssh dokku@${{ secrets.DOKKU_HOST }} -C "dokku config:set container-5ijymqk RAILS_DEVELOPMENT_HOSTS=container-5ijymqk.containers.anotherwebservice.com"
+          # Database connection string (rails)
+          ssh dokku@${{ secrets.DOKKU_HOST }} -C "dokku config:set container-5ijymqk DATABASE_URL=${{ secrets.RAILS_DATABASE_URL }}"
+          ssh dokku@${{ secrets.DOKKU_HOST }} -C "dokku git:sync --build container-5ijymqk" https://github.com/jimmyedagawa78/container-5ijymqk.git main
+          # Assign letsencrypt wildcard certificate
+          ssh dokku@${{ secrets.DOKKU_HOST }} -C "dokku certs:add container-5ijymqk < cert-key.tar"
+
